@@ -81,6 +81,18 @@ output is shaped exactly like an OpenAI/Anthropic function call
 unchanged. The gate code does not change. `python3 example_agent.py --interactive`
 makes you the approver.
 
+## Wiring a real model
+
+[`openai_adapter.py`](openai_adapter.py) is the thin translation between a real
+provider's tool-calling response and the gate — `agent.call(name, args)` is
+provider-agnostic, so the adapter is all that changes between OpenAI, Anthropic, or
+your own loop. `dispatch(message, agent)` runs every tool call in a model's message
+through the gate and hands back `(results, pending)`: read-only results ready to
+return to the model now, and write calls the gate is holding for a person, each
+with the `request_id` to approve. The model never appears in the approval path. The
+module's docstring has the full `while` loop; its test drives it with
+provider-shaped fakes, so it needs no SDK or API key.
+
 ## Limits
 
 - The split between the agent's handle and the gate is by interface. Inside one Python process
@@ -94,7 +106,8 @@ makes you the approver.
 - Requests are held in memory and are lost on restart.
 
 Standard library only, Python 3.10 or later. The gate is ~90 lines; the suite has
-14 tests, including the end-to-end example above.
+18 tests, including the end-to-end example and the provider-adapter tests. `make test`
+runs them under `-W error::ResourceWarning`.
 
 ## Credits
 
