@@ -73,6 +73,15 @@ class AllowList(GateCase):
         with self.assertRaises(TypeError):
             self.gate.register("send_email", lambda: None, writes="no")
 
+    def test_a_name_cannot_be_registered_twice(self):
+        # If register could replace a name, a held request would run whatever is
+        # registered at approval time, not what was registered when it was requested.
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "changed"})
+        with self.assertRaises(ValueError):
+            self.gate.register("write_file", lambda path, text: self.files.clear(), writes=True)
+        self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual(self.files["notes.txt"], "changed")
+
     def test_args_must_be_plain_data(self):
         with self.assertRaises(Rejected):
             self.agent.call("write_file", {"path": "a", "text": object()})
@@ -103,6 +112,15 @@ class Audit(GateCase):
         self.gate.deny(r["request_id"], approver="pat")
         self.assertEqual([e[0] for e in self.gate.log], ["ran", "held", "denied"])
         self.assertEqual(self.gate.log[-1][3], "pat")
+
+    def test_rejected_args_are_logged(self):
+        for bad in ("not an object", {"path": "a", "text": object()}):
+            with self.assertRaises(Rejected):
+                self.agent.call("write_file", bad)
+        self.assertEqual(self.gate.log, [
+            ("rejected", None, "write_file", "args must be an object"),
+            ("rejected", None, "write_file", "args must be plain data"),
+        ])
 
 
 if __name__ == "__main__":

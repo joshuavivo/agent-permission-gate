@@ -22,9 +22,15 @@ class Gate:
         self.log = []         # every decision, in order
 
     def register(self, name, fn, writes):
-        """writes has no default on purpose: every tool must be classified when it is added."""
+        """writes has no default on purpose: every tool must be classified when it is added.
+
+        A name is registered once. Replacing it would change what an already-held request
+        runs when it is approved, so a person could approve one function and run another.
+        """
         if not isinstance(writes, bool):
             raise TypeError("writes must be True or False")
+        if name in self._tools:
+            raise ValueError(f"tool {name!r} is already registered")
         self._tools[name] = (fn, writes)
 
     def for_agent(self):
@@ -60,10 +66,12 @@ class Gate:
             self.log.append(("rejected", None, name, "not on the allow-list"))
             raise Rejected(f"tool {name!r} is not on the allow-list")
         if not isinstance(args, dict):
+            self.log.append(("rejected", None, name, "args must be an object"))
             raise Rejected("args must be an object")
         try:
             json.dumps(args)
         except (TypeError, ValueError):
+            self.log.append(("rejected", None, name, "args must be plain data"))
             raise Rejected("args must be plain data") from None
         fn, writes = self._tools[name]
         if not writes:

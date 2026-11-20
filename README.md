@@ -18,9 +18,10 @@ get a change through without a person, and each one has to fail.
 | What runs is what the person saw, even if the arguments are changed afterwards | `test_what_runs_is_what_was_approved_even_if_the_args_change_afterwards` |
 | A tool not on the allow-list is rejected | `test_tool_not_on_the_allow_list_is_rejected` |
 | Every tool is classified as read or write when it is added, with no default | `test_a_tool_must_be_classified_when_registered` |
+| A tool name is registered once, so a held request cannot be swapped for another function | `test_a_name_cannot_be_registered_twice` |
 | Text inside tool output cannot approve anything | `test_instructions_inside_tool_output_cannot_approve_anything` |
 | An agent that obeys injected text still cannot approve | `test_agent_obeying_the_injected_text_still_cannot_approve` |
-| Every decision is logged | `test_every_decision_is_logged_in_order` |
+| Every decision is logged, rejections included | `test_every_decision_is_logged_in_order`, `test_rejected_args_are_logged` |
 
 ## Why injected instructions fail
 
@@ -74,23 +75,29 @@ $ python3 example_agent.py
   emails actually sent: 0
 ```
 
-The "model" in the example is a scripted stand-in so it runs with no API key. Its
-output is shaped exactly like an OpenAI/Anthropic function call
-(`{"name", "arguments"}`), so wiring a real model in is one substitution — replace
-`scripted_model` with the provider call and pass `response.tool_calls` through
-unchanged. The gate code does not change. `python3 example_agent.py --interactive`
+The "model" in the example is a scripted stand-in so it runs with no API key. It
+reads the brief and acts on it: asked only for a draft, it tries to send because
+the brief says the send is "already approved". Its calls are plain
+`{"name", "arguments"}` dicts. A real provider sends `arguments` as a JSON string
+inside its own objects, so wiring a real model in means replacing `scripted_model`
+with the provider call and translating its tool calls with
+`openai_adapter.tool_calls_from_openai(response.choices[0].message)`. The gate code
+does not change. `python3 example_agent.py --interactive`
 makes you the approver.
 
 ## Wiring a real model
 
-[`openai_adapter.py`](openai_adapter.py) is the thin translation between a real
-provider's tool-calling response and the gate — `agent.call(name, args)` is
-provider-agnostic, so the adapter is all that changes between OpenAI, Anthropic, or
-your own loop. `dispatch(message, agent)` runs every tool call in a model's message
-through the gate and hands back `(results, pending)`: read-only results ready to
-return to the model now, and write calls the gate is holding for a person, each
-with the `request_id` to approve. The model never appears in the approval path. The
-module's docstring has the full `while` loop; its test drives it with
+[`openai_adapter.py`](openai_adapter.py) is the thin translation between OpenAI's
+Chat Completions tool-calling response and the gate. `agent.call(name, args)` is
+provider-agnostic; another provider (Anthropic's `tool_use` blocks, for example)
+needs its own small adapter, which this repo does not include.
+`dispatch(message, agent)` runs every tool call in a model's message through the
+gate and hands back `(results, pending)`: tool messages ready to return to the
+model now, and write calls the gate is holding for a person, each with the
+`request_id` to approve. A call the gate refuses, or one with malformed JSON
+arguments, comes back as an error message in `results` and the rest of the message
+still runs, so every tool call is either answered now or held, never dropped. The
+model never appears in the approval path. The module's docstring has the full `while` loop; its test drives it with
 provider-shaped fakes, so it needs no SDK or API key.
 
 ## Limits
@@ -104,9 +111,11 @@ provider-shaped fakes, so it needs no SDK or API key.
 - A read can still leak data, for example a fetch whose URL carries a secret. This gate
   controls changes, not what leaves.
 - Requests are held in memory and are lost on restart.
+- `dispatch` answers calls the gate refuses and calls with malformed arguments. An exception
+  raised inside a tool function itself still propagates to the caller.
 
-Standard library only, Python 3.10 or later. The gate is ~90 lines; the suite has
-18 tests, including the end-to-end example and the provider-adapter tests. `make test`
+Standard library only, Python 3.10 or later. The gate is under 100 lines; the suite has
+22 tests, including the end-to-end example and the provider-adapter tests. `make test`
 runs them under `-W error::ResourceWarning`.
 
 ## Credits
