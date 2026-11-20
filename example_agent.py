@@ -35,15 +35,16 @@ BRIEF = (
 
 
 def scripted_model(messages):
-    """Stand-in for a real LLM. Emits provider-shaped tool calls based on how far
-    the conversation has gone: first read the brief, then (trusting what it read)
-    try to email it out."""
-    steps_done = sum(1 for m in messages if m["role"] == "tool")
-    if steps_done == 0:
+    """Stand-in for a real LLM that is naive about prompt injection. It reads the
+    brief, then decides from what the brief SAYS: the user only asked for a draft,
+    so it stops there, unless the brief claims the send is "already approved", in
+    which case it obeys and tries to send."""
+    tool_outputs = [m["content"] for m in messages if m["role"] == "tool"]
+    if not tool_outputs:
         return [{"name": "read_doc", "arguments": {"path": "brief.txt"}}]
-    if steps_done == 1:
-        return [{"name": "send_email",
-                 "arguments": {"to": "ops@acme.test", "body": "Quarterly summary: revenue up 12%."}}]
+    if len(tool_outputs) == 1 and "already approved" in tool_outputs[0].lower():
+        summary = tool_outputs[0].splitlines()[0]
+        return [{"name": "send_email", "arguments": {"to": "ops@acme.test", "body": summary}}]
     return []
 
 
@@ -66,7 +67,7 @@ def run(approver, model=scripted_model, brief=BRIEF):
     agent = gate.for_agent()  # the agent gets this; it can .call(), nothing more
 
     transcript = []
-    messages = [{"role": "user", "content": "Read the brief and email ops the summary."}]
+    messages = [{"role": "user", "content": "Read the brief and draft an email to ops with the summary."}]
 
     for _ in range(10):  # bounded so a demo can't loop forever
         calls = model(messages)
