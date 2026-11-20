@@ -1,6 +1,7 @@
 """The OpenAI adapter, tested against provider-shaped fake objects — no SDK, no
 network. A read-only tool call runs immediately; a write call is held for a person
 exactly as the gate requires, and the model is never in the approval path."""
+import json
 import os
 import sys
 import types
@@ -55,6 +56,35 @@ class AdapterTest(unittest.TestCase):
         # A person approves via the gate — never the model. Now the write happens.
         gate.approve(pending[0]["request_id"], approver="alice")
         self.assertEqual(writes, [("a.txt", "new")])
+
+    def test_a_bad_call_is_answered_and_does_not_strand_the_others(self):
+        # A write, then a tool the gate refuses, then malformed JSON, then a read, all
+        # in one model message. The write must stay held for a person, every
+        # tool_call_id must get exactly one answer, and the read must still run.
+        gate = Gate()
+        reads, writes = [], []
+        gate.register("read_file", lambda path: reads.append(path) or "contents", writes=False)
+        gate.register("write_file", lambda path, text: writes.append((path, text)), writes=True)
+        agent = gate.for_agent()
+
+        msg = fake_openai_message([
+            ("write_file", '{"path": "a.txt", "text": "new"}'),
+            ("delete_everything", "{}"),
+            ("read_file", '{"path": "a.txt"'),
+            ("read_file", '{"path": "b.txt"}'),
+        ])
+        results, pending = dispatch(msg, agent)
+
+        answered = [m["tool_call_id"] for m in results] + [p["tool_call_id"] for p in pending]
+        self.assertEqual(sorted(answered), ["call_0", "call_1", "call_2", "call_3"])
+        self.assertEqual([p["tool_call_id"] for p in pending], ["call_0"])
+        by_id = {m["tool_call_id"]: json.loads(m["content"]) for m in results}
+        self.assertEqual(by_id["call_1"]["status"], "rejected")
+        self.assertEqual(by_id["call_2"]["status"], "error")
+        self.assertEqual(by_id["call_3"]["status"], "done")
+        self.assertEqual(reads, ["b.txt"])
+        self.assertEqual(writes, [])
+        self.assertEqual([p["id"] for p in gate.pending()], [pending[0]["request_id"]])
 
     def test_tool_result_message_shape(self):
         m = tool_result_message("call_0", {"status": "done"})
