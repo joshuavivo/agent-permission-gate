@@ -1,5 +1,4 @@
-"""Wire the gate to a real tool-calling model (OpenAI shown; Anthropic is the same
-shape with different attribute names).
+"""Wire the gate to a real tool-calling model: OpenAI's Chat Completions format.
 
 The gate's handle — `agent.call(name, args)` — is provider-agnostic. This module is
 the thin translation between a provider's response and those calls, and back into

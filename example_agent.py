@@ -3,15 +3,16 @@ holds writes for a person — even when the agent has been told, by text it read
 go ahead.
 
 The "model" here is a scripted stand-in so the example runs with no API key and no
-network. Its output is shaped exactly like an OpenAI/Anthropic function call — a
-list of {"name", "arguments"} — so wiring a real model in means replacing
-`scripted_model` with a provider call and passing `response.tool_calls` straight
-through. The gate code does not change at all:
+network. It emits a list of {"name", "arguments"} dicts with `arguments` already a
+dict. A real provider sends `arguments` as a JSON string inside its own objects, so
+wiring a real model in means replacing `scripted_model` with the provider call and
+translating its tool calls; `openai_adapter.tool_calls_from_openai` does that for
+OpenAI (and `openai_adapter.dispatch` runs the whole message through the gate). The
+gate code does not change:
 
-    # Real integration (OpenAI shown; Anthropic is the same idea):
+    # Real integration (OpenAI):
     #   resp = client.chat.completions.create(model=..., messages=messages, tools=TOOLS)
-    #   calls = [{"name": c.function.name, "arguments": json.loads(c.function.arguments)}
-    #            for c in (resp.choices[0].message.tool_calls or [])]
+    #   calls = tool_calls_from_openai(resp.choices[0].message)
     # Everything below — agent.call(...), the pending/approve flow — is unchanged.
 
 Run it:
