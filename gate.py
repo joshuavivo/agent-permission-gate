@@ -22,9 +22,15 @@ class Gate:
         self.log = []         # every decision, in order
 
     def register(self, name, fn, writes):
-        """writes has no default on purpose: every tool must be classified when it is added."""
+        """writes has no default on purpose: every tool must be classified when it is added.
+
+        A name is registered once. Replacing it would change what an already-held request
+        runs when it is approved, so a person could approve one function and run another.
+        """
         if not isinstance(writes, bool):
             raise TypeError("writes must be True or False")
+        if name in self._tools:
+            raise ValueError(f"tool {name!r} is already registered")
         self._tools[name] = (fn, writes)
 
     def for_agent(self):
