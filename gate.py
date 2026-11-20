@@ -66,10 +66,12 @@ class Gate:
             self.log.append(("rejected", None, name, "not on the allow-list"))
             raise Rejected(f"tool {name!r} is not on the allow-list")
         if not isinstance(args, dict):
+            self.log.append(("rejected", None, name, "args must be an object"))
             raise Rejected("args must be an object")
         try:
             json.dumps(args)
         except (TypeError, ValueError):
+            self.log.append(("rejected", None, name, "args must be plain data"))
             raise Rejected("args must be plain data") from None
         fn, writes = self._tools[name]
         if not writes:

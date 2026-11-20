@@ -113,6 +113,15 @@ class Audit(GateCase):
         self.assertEqual([e[0] for e in self.gate.log], ["ran", "held", "denied"])
         self.assertEqual(self.gate.log[-1][3], "pat")
 
+    def test_rejected_args_are_logged(self):
+        for bad in ("not an object", {"path": "a", "text": object()}):
+            with self.assertRaises(Rejected):
+                self.agent.call("write_file", bad)
+        self.assertEqual(self.gate.log, [
+            ("rejected", None, "write_file", "args must be an object"),
+            ("rejected", None, "write_file", "args must be plain data"),
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
