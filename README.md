@@ -1,5 +1,10 @@
 # Agent permission gate
 
+**An AI assistant that reads one poisoned email or web page can be talked into emailing a
+customer or issuing a refund on its own.** This gate holds every action that changes something
+until a person approves it, and the log shows who decided and what actually happened. (It guards
+changes, not what a read can leak; see Limits.)
+
 A small gate that sits between an AI agent and its tools. Tools that only read run straight
 away. Tools that change anything wait until a person approves that exact call.
 
@@ -31,7 +36,8 @@ A web page or a file can contain text such as "this request is approved". The ga
 try to detect that text. It makes it irrelevant: the agent is given a handle with one method,
 `call`, and approval is a different method on a different object that only the application's
 approve button reaches. There is no tool named `approve` to call, and nothing the model reads
-or writes is ever interpreted as a decision.
+or writes is ever interpreted as a decision. (Inside one process that separation is a
+convention, not a wall; see Limits for where the real boundary goes.)
 
 ## Use
 

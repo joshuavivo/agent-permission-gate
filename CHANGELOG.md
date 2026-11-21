@@ -1,0 +1,27 @@
+# Changelog
+
+Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+This file starts on 2026-11-21; earlier changes are in the git history and the merged pull requests.
+
+## [Unreleased]
+
+Fixes from an independent review. The theme: the audit log is the product, so it has to record
+what really happened.
+
+### Fixed
+- **The log records outcomes, not only decisions.** An approved call whose tool raised was logged
+  as "approved" with nothing after it, as if it had run. It is now logged "approved" then "failed"
+  (with the error), or "approved" then "done". A read that raised was logged as "ran"; it is now
+  logged as "failed".
+- **Calls are checked when requested.** Missing or unknown arguments are refused and logged when
+  the agent asks, instead of being held, approved by a person, and failing inside the tool. Tools
+  Python can't inspect (builtins such as `dict`) skip the check and run as before.
+- **Refused approvals are logged.** Approving a used request, or an id that doesn't exist, is now
+  in the log with who clicked, as the README always said.
+- **The injection test checks that a person was asked.** It used to share its input with the
+  denied-write test and checked only the log order; it now also checks that the person was asked
+  about exactly the send the injected text produced.
+
+### Changed
+- README opens with what an unguarded agent could do, and the "why injected instructions fail"
+  section points to Limits for where the real process boundary belongs.
