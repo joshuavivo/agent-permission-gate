@@ -48,7 +48,7 @@ class Gate:
         never shows an approved call as if it ran when the tool raised. Either way the approval
         is used up: a retry is a new request, approved again.
         """
-        r = self._take(request_id)
+        r = self._take(request_id, approver)
         r["status"] = "approved"
         self.log.append(("approved", request_id, r["tool"], approver))
         fn, _ = self._tools[r["tool"]]
@@ -63,15 +63,18 @@ class Gate:
         return out
 
     def deny(self, request_id, approver):
-        r = self._take(request_id)
+        r = self._take(request_id, approver)
         r["status"] = "denied"
         self.log.append(("denied", request_id, r["tool"], approver))
 
-    def _take(self, request_id):
+    def _take(self, request_id, approver):
+        """A refused approve/deny is logged too: a second click is part of the record."""
         r = self._requests.get(request_id)
         if r is None:
+            self.log.append(("rejected", request_id, None, f"{approver}: no such request"))
             raise Rejected(f"no request {request_id}")
         if r["status"] != "pending":
+            self.log.append(("rejected", request_id, r["tool"], f"{approver}: already {r['status']}"))
             raise Rejected(f"request {request_id} was already {r['status']}")  # an approval is used once
         return r
 

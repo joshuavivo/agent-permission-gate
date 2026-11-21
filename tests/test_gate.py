@@ -158,6 +158,18 @@ class Audit(GateCase):
         self.assertEqual([e[0] for e in self.gate.log], ["ran", "held", "denied"])
         self.assertEqual(self.gate.log[-1][3], "pat")
 
+    def test_a_refused_approval_is_logged(self):
+        # Approving a request twice, or one that doesn't exist, is refused, and the refusal is
+        # part of the record: a second "approve" click is exactly what an audit needs to see.
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        self.gate.approve(r["request_id"], approver="pat")
+        for request_id in (r["request_id"], 99):
+            with self.assertRaises(Rejected):
+                self.gate.approve(request_id, approver="sam")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "done", "rejected", "rejected"])
+        self.assertEqual(self.gate.log[3][1:3], (r["request_id"], "write_file"))
+        self.assertIn("sam", self.gate.log[3][3])
+
     def test_rejected_args_are_logged(self):
         for bad in ("not an object", {"path": "a", "text": object()}):
             with self.assertRaises(Rejected):
