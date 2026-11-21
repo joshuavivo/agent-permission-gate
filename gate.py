@@ -6,6 +6,7 @@ nothing else, so no text the model produces or reads can approve anything: appro
 is a separate method the agent's handle does not have.
 """
 import copy
+import inspect
 import json
 
 
@@ -74,6 +75,16 @@ class Gate:
             self.log.append(("rejected", None, name, "args must be plain data"))
             raise Rejected("args must be plain data") from None
         fn, writes = self._tools[name]
+        try:  # a call the tool can't accept is refused now, not after a person approves it
+            sig = inspect.signature(fn)
+        except Exception:  # builtins like dict have none; a custom __signature__ can raise anything
+            sig = None     # no signature to check, so the call itself will tell
+        if sig is not None:
+            try:
+                sig.bind(**args)
+            except TypeError as e:
+                self.log.append(("rejected", None, name, f"args don't match the tool: {e}"))
+                raise Rejected(f"args don't match {name!r}: {e}") from None
         if not writes:
             self.log.append(("ran", None, name, "read-only"))
             return {"status": "done", "output": fn(**args)}

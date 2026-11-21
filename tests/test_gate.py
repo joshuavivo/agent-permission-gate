@@ -105,6 +105,20 @@ class Injection(GateCase):
         self.assertEqual(len(self.gate.pending()), 1)
 
 
+class Arguments(GateCase):
+    def test_a_call_that_cannot_run_is_refused_when_requested_not_when_approved(self):
+        # Missing or unknown arguments used to be held, approved by a person, and only then
+        # fail inside the tool. Now the call is checked against the tool's signature up front.
+        for bad in ({"path": "notes.txt"}, {"path": "notes.txt", "text": "x", "mode": "w"}):
+            with self.assertRaises(Rejected):
+                self.agent.call("write_file", bad)
+        with self.assertRaises(Rejected):
+            self.agent.call("read_file", {})
+        self.assertEqual(self.gate.pending(), [])
+        self.assertEqual([e[0] for e in self.gate.log], ["rejected"] * 3)
+        self.assertTrue(all("don't match" in e[3] for e in self.gate.log))
+
+
 class Audit(GateCase):
     def test_every_decision_is_logged_in_order(self):
         self.agent.call("read_file", {"path": "notes.txt"})
@@ -121,6 +135,26 @@ class Audit(GateCase):
             ("rejected", None, "write_file", "args must be an object"),
             ("rejected", None, "write_file", "args must be plain data"),
         ])
+
+
+class ToolsWithoutASignature(GateCase):
+    def test_a_tool_python_cannot_inspect_still_runs(self):
+        # Some callables (builtins like dict) have no signature to check. The argument check
+        # is skipped for them rather than refusing the call or crashing the gate.
+        self.gate.register("make_record", dict, writes=False)
+        r = self.agent.call("make_record", {"a": 1})
+        self.assertEqual(r, {"status": "done", "output": {"a": 1}})
+        self.assertEqual([e[0] for e in self.gate.log], ["ran"])
+
+    def test_a_tool_whose_signature_lookup_raises_still_runs(self):
+        class Odd:
+            @property
+            def __signature__(self):
+                raise RuntimeError("no signature here")
+            def __call__(self, **kw):
+                return kw
+        self.gate.register("odd", Odd(), writes=False)
+        self.assertEqual(self.agent.call("odd", {"a": 1}), {"status": "done", "output": {"a": 1}})
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ get a change through without a person, and each one has to fail.
 | A denied request leaves no side effect and cannot be approved later | `test_denied_request_leaves_no_side_effect_and_cannot_be_approved_later` |
 | An approval is used once | `test_an_approval_is_used_once` |
 | What runs is what the person saw, even if the arguments are changed afterwards | `test_what_runs_is_what_was_approved_even_if_the_args_change_afterwards` |
+| A call the tool can't accept (missing or unknown arguments) is refused when requested, before anyone is asked to approve it | `test_a_call_that_cannot_run_is_refused_when_requested_not_when_approved` |
 | A tool not on the allow-list is rejected | `test_tool_not_on_the_allow_list_is_rejected` |
 | Every tool is classified as read or write when it is added, with no default | `test_a_tool_must_be_classified_when_registered` |
 | A tool name is registered once, so a held request cannot be swapped for another function | `test_a_name_cannot_be_registered_twice` |
@@ -114,8 +115,8 @@ provider-shaped fakes, so it needs no SDK or API key.
 - `dispatch` answers calls the gate refuses and calls with malformed arguments. An exception
   raised inside a tool function itself still propagates to the caller.
 
-Standard library only, Python 3.10 or later. The gate is under 100 lines; the suite has
-22 tests, including the end-to-end example and the provider-adapter tests. `make test`
+Standard library only, Python 3.10 or later. The gate is about 110 lines; the suite has
+25 tests, including the end-to-end example and the provider-adapter tests. `make test`
 runs them under `-W error::ResourceWarning`.
 
 ## Credits
