@@ -42,12 +42,25 @@ class Gate:
                 for i, r in self._requests.items() if r["status"] == "pending"]
 
     def approve(self, request_id, approver):
-        """Run the held call exactly as it was requested, once."""
+        """Run the held call exactly as it was requested, once.
+
+        The log gets the decision ("approved") and then the outcome ("done" or "failed"), so it
+        never shows an approved call as if it ran when the tool raised. Either way the approval
+        is used up: a retry is a new request, approved again.
+        """
         r = self._take(request_id)
         r["status"] = "approved"
         self.log.append(("approved", request_id, r["tool"], approver))
         fn, _ = self._tools[r["tool"]]
-        return fn(**copy.deepcopy(r["args"]))
+        try:
+            out = fn(**copy.deepcopy(r["args"]))
+        except Exception as e:
+            r["status"] = "failed"
+            self.log.append(("failed", request_id, r["tool"], f"{type(e).__name__}: {e}"))
+            raise
+        r["status"] = "done"
+        self.log.append(("done", request_id, r["tool"], approver))
+        return out
 
     def deny(self, request_id, approver):
         r = self._take(request_id)
@@ -86,8 +99,13 @@ class Gate:
                 self.log.append(("rejected", None, name, f"args don't match the tool: {e}"))
                 raise Rejected(f"args don't match {name!r}: {e}") from None
         if not writes:
+            try:
+                out = fn(**args)
+            except Exception as e:  # logged as what it was, then the caller sees the error
+                self.log.append(("failed", None, name, f"{type(e).__name__}: {e}"))
+                raise
             self.log.append(("ran", None, name, "read-only"))
-            return {"status": "done", "output": fn(**args)}
+            return {"status": "done", "output": out}
         request_id = len(self._requests) + 1
         # Deep copy: what the person approves is what was asked, even if the caller changes its dict afterwards.
         self._requests[request_id] = {"tool": name, "args": copy.deepcopy(args), "status": "pending"}

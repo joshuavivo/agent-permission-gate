@@ -119,6 +119,37 @@ class Arguments(GateCase):
         self.assertTrue(all("don't match" in e[3] for e in self.gate.log))
 
 
+class Outcomes(GateCase):
+    """The log records what happened, not only what was decided."""
+
+    def setUp(self):
+        super().setUp()
+        def send(to):
+            raise ConnectionError("mail server down")
+        def broken_read(path):
+            raise KeyError(path)
+        self.gate.register("send", send, writes=True)
+        self.gate.register("broken_read", broken_read, writes=False)
+
+    def test_an_approved_call_that_fails_is_logged_as_failed(self):
+        r = self.agent.call("send", {"to": "pat@example.com"})
+        with self.assertRaises(ConnectionError):
+            self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "failed"])
+        self.assertIn("mail server down", self.gate.log[-1][3])
+        self.assertEqual(self.gate.pending(), [])  # used once; a retry is a new request
+
+    def test_an_approved_call_that_succeeds_is_logged_as_done(self):
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "done"])
+
+    def test_a_read_that_fails_is_not_logged_as_ran(self):
+        with self.assertRaises(KeyError):
+            self.agent.call("broken_read", {"path": "missing.txt"})
+        self.assertEqual([e[0] for e in self.gate.log], ["failed"])
+
+
 class Audit(GateCase):
     def test_every_decision_is_logged_in_order(self):
         self.agent.call("read_file", {"path": "notes.txt"})
