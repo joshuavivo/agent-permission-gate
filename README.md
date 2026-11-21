@@ -114,7 +114,7 @@ provider-shaped fakes, so it needs no SDK or API key.
 - `dispatch` answers calls the gate refuses and calls with malformed arguments. An exception
   raised inside a tool function itself still propagates to the caller.
 
-Standard library only, Python 3.10 or later. The gate is under 100 lines; the suite has
+Standard library only, Python 3.11 or later. The gate is under 100 lines; the suite has
 22 tests, including the end-to-end example and the provider-adapter tests. `make test`
 runs them under `-W error::ResourceWarning`.
 
