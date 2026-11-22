@@ -32,6 +32,19 @@ class AdapterTest(unittest.TestCase):
         msg = {"tool_calls": [{"id": "c1", "function": {"name": "noop", "arguments": {"x": 1}}}]}
         self.assertEqual(tool_calls_from_openai(msg), [{"id": "c1", "name": "noop", "arguments": {"x": 1}}])
 
+    def test_a_read_whose_output_is_not_json_still_gets_an_answer(self):
+        # A read returning a datetime made dispatch raise after the write in the same message
+        # was already held, so neither list came back and the tool_call_ids went unanswered.
+        import datetime
+        gate = Gate()
+        gate.register("now", lambda: datetime.datetime(2026, 1, 1), writes=False)
+        gate.register("write_file", lambda path, text: None, writes=True)
+        msg = fake_openai_message([("write_file", '{"path": "a", "text": "b"}'), ("now", "{}")])
+        results, pending = dispatch(msg, gate.for_agent())
+        self.assertEqual([p["tool_call_id"] for p in pending], ["call_0"])
+        self.assertEqual([r["tool_call_id"] for r in results], ["call_1"])
+        self.assertEqual(json.loads(results[0]["content"])["status"], "error")
+
     def test_dispatch_runs_reads_and_holds_writes(self):
         gate = Gate()
         read_calls, writes = [], []

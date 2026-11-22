@@ -18,6 +18,10 @@ what really happened.
   Python can't inspect (builtins such as `dict`) skip the check and run as before.
 - **Refused approvals are logged.** Approving a used request, or an id that doesn't exist, is now
   in the log with who clicked, as the README always said.
+- **`dispatch` answers a call whose output isn't JSON.** A read tool returning a
+  `datetime` made `dispatch` raise after a write in the same message was already held,
+  so the caller got neither list. It now answers that call with an error and returns
+  both lists. Found by an outside review.
 - **The injection test checks that a person was asked.** It used to share its input with the
   denied-write test and checked only the log order; it now also checks that the person was asked
   about exactly the send the injected text produced.
