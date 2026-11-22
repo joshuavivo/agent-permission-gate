@@ -32,5 +32,9 @@ what really happened.
   about exactly the send the injected text produced.
 
 ### Changed
+- README's opening says what the log really holds (each call, who decided, whether it ran
+  or failed) and that only tools labelled as writes are held; Limits adds that the log has
+  no arguments, timestamps or outputs, and that arguments are checked by name, not type.
+  Found by an outside review.
 - README opens with what an unguarded agent could do, and the "why injected instructions fail"
   section points to Limits for where the real process boundary belongs.

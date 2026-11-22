@@ -1,9 +1,10 @@
 # Agent permission gate
 
 **An AI assistant that reads one poisoned email or web page can be talked into emailing a
-customer or issuing a refund on its own.** This gate holds every action that changes something
-until a person approves it, and the log shows who decided and what actually happened. (It guards
-changes, not what a read can leak; see Limits.)
+customer or issuing a refund on its own.** This gate holds every call to a tool marked as a write
+until a person approves it, and the log records each call, who decided, and whether it ran or
+failed. (It guards changes, not what a read can leak, and it trusts each tool's read/write label;
+see Limits.)
 
 A small gate that sits between an AI agent and its tools. Tools that only read run straight
 away. Tools that change anything wait until a person approves that exact call.
@@ -109,6 +110,13 @@ model never appears in the approval path. The module's docstring has the full `w
 provider-shaped fakes, so it needs no SDK or API key.
 
 ## Limits
+
+- The log records the decision and the outcome for each request id: who approved or denied,
+  and whether the call ran or failed (with the error). It does not store the arguments, a
+  timestamp or the tool's output; the held request (`pending()`) has the arguments until it is
+  decided. A production audit log would store all three in an append-only store.
+- Arguments are checked by name against the tool's signature, not by type: `to=["a", "b"]` or
+  `body=None` is held for a person as asked.
 
 - The split between the agent's handle and the gate is by interface. Inside one Python process
   that is a convention, not a security boundary: code running in the same process can reach the
