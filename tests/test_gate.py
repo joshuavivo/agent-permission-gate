@@ -170,6 +170,13 @@ class Audit(GateCase):
         self.assertEqual(self.gate.log[3][1:3], (r["request_id"], "write_file"))
         self.assertIn("sam", self.gate.log[3][3])
 
+    def test_denying_a_used_request_is_refused_and_logged(self):
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        self.gate.deny(r["request_id"], approver="pat")
+        with self.assertRaises(Rejected):
+            self.gate.deny(r["request_id"], approver="sam")
+        self.assertEqual(self.gate.log[-1], ("rejected", r["request_id"], "write_file", "sam: already denied"))
+
     def test_rejected_args_are_logged(self):
         for bad in ("not an object", {"path": "a", "text": object()}):
             with self.assertRaises(Rejected):

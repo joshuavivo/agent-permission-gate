@@ -27,8 +27,8 @@ get a change through without a person, and each one has to fail.
 | A tool name is registered once, so a held request cannot be swapped for another function | `test_a_name_cannot_be_registered_twice` |
 | Text inside tool output cannot approve anything | `test_instructions_inside_tool_output_cannot_approve_anything` |
 | An agent that obeys injected text still cannot approve | `test_agent_obeying_the_injected_text_still_cannot_approve` |
-| Every decision is logged, rejections included | `test_every_decision_is_logged_in_order`, `test_rejected_args_are_logged`, `test_a_refused_approval_is_logged` |
-| The log records the outcome too: an approved call is logged as done or failed, and a read that raises is never logged as ran | `test_an_approved_call_that_fails_is_logged_as_failed`, `test_a_read_that_fails_is_not_logged_as_ran` |
+| Every decision is logged, rejections included | `test_every_decision_is_logged_in_order`, `test_rejected_args_are_logged`, `test_a_refused_approval_is_logged`, `test_denying_a_used_request_is_refused_and_logged` |
+| The log records the outcome too: an approved call is logged as done or failed, and a read that raises is never logged as ran | `test_an_approved_call_that_fails_is_logged_as_failed`, `test_an_approved_call_that_succeeds_is_logged_as_done`, `test_a_read_that_fails_is_not_logged_as_ran` |
 
 ## Why injected instructions fail
 
@@ -123,7 +123,7 @@ provider-shaped fakes, so it needs no SDK or API key.
   raised inside a tool function itself still propagates to the caller.
 
 Standard library only, Python 3.10 or later. The gate is about 130 lines; the suite has
-29 tests, including the end-to-end example and the provider-adapter tests. `make test`
+30 tests, including the end-to-end example and the provider-adapter tests. `make test`
 runs them under `-W error::ResourceWarning`.
 
 ## Credits
