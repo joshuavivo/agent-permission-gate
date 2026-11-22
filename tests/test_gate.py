@@ -1,4 +1,5 @@
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -148,6 +149,53 @@ class Outcomes(GateCase):
         with self.assertRaises(KeyError):
             self.agent.call("broken_read", {"path": "missing.txt"})
         self.assertEqual([e[0] for e in self.gate.log], ["failed"])
+
+
+class Hardening(GateCase):
+    def test_a_tool_that_exits_is_still_logged_as_failed(self):
+        # BaseException (SystemExit, KeyboardInterrupt, asyncio.CancelledError) used to skip the
+        # failure record, leaving the log ending at "approved".
+        def quit_now(to):
+            raise SystemExit(1)
+        self.gate.register("quit", quit_now, writes=True)
+        r = self.agent.call("quit", {"to": "x"})
+        with self.assertRaises(SystemExit):
+            self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "failed"])
+
+    def test_a_tool_name_that_is_not_text_is_refused_and_logged(self):
+        with self.assertRaises(Rejected):
+            self.agent.call(["write_file"], {})
+        self.assertEqual(self.gate.log[-1][0], "rejected")
+
+    def test_the_approver_must_say_who_decided(self):
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        for nobody in (None, "", "   "):
+            with self.assertRaises(ValueError):
+                self.gate.approve(r["request_id"], approver=nobody)
+        self.assertEqual(len(self.gate.pending()), 1)
+        self.assertEqual(self.files["notes.txt"], "hello")
+
+    def test_two_people_approving_at_once_run_the_call_once(self):
+        runs = []
+        def slow_write(path, text):
+            runs.append(path)
+            return "written"
+        self.gate.register("slow_write", slow_write, writes=True)
+        r = self.agent.call("slow_write", {"path": "a", "text": "b"})
+        start = threading.Barrier(8)
+        def click():
+            start.wait()
+            try:
+                self.gate.approve(r["request_id"], approver="pat")
+            except Rejected:
+                pass
+        threads = [threading.Thread(target=click) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(runs, ["a"])
 
 
 class Audit(GateCase):

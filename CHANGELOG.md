@@ -18,6 +18,11 @@ what really happened.
   Python can't inspect (builtins such as `dict`) skip the check and run as before.
 - **Refused approvals are logged.** Approving a used request, or an id that doesn't exist, is now
   in the log with who clicked, as the README always said.
+- **Hardening from an outside review.** A tool that raised `SystemExit` or a cancellation
+  (any `BaseException`) left the log ending at "approved"; it is now logged "failed". A
+  tool name that isn't text crashed with nothing logged; it is now refused and logged. An
+  empty or missing approver (`None`) was accepted as who decided; it is now an error.
+  Approve and deny take a lock, so two simultaneous clicks can't both run the call.
 - **`dispatch` answers a call whose output isn't JSON.** A read tool returning a
   `datetime` made `dispatch` raise after a write in the same message was already held,
   so the caller got neither list. It now answers that call with an error and returns
