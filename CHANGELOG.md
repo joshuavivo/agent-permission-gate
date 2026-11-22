@@ -22,7 +22,9 @@ what really happened.
   (any `BaseException`) left the log ending at "approved"; it is now logged "failed". A
   tool name that isn't text crashed with nothing logged; it is now refused and logged. An
   empty or missing approver (`None`) was accepted as who decided; it is now an error.
-  Approve and deny take a lock, so two simultaneous clicks can't both run the call.
+  Approve and deny take a lock, so two simultaneous clicks can't both run the call. A new
+  request takes its id under the same lock (two requests made at once could share an id and
+  one would overwrite the other), and `pending()` reads under it too.
 - **`dispatch` answers a call whose output isn't JSON.** A read tool returning a
   `datetime` made `dispatch` raise after a write in the same message was already held,
   so the caller got neither list. It now answers that call with an error and returns

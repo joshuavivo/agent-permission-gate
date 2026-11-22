@@ -40,8 +40,9 @@ class Gate:
         return AgentHandle(self)
 
     def pending(self):
-        return [{"id": i, "tool": r["tool"], "args": copy.deepcopy(r["args"])}
-                for i, r in self._requests.items() if r["status"] == "pending"]
+        with self._lock:  # a request added mid-iteration would otherwise break the loop
+            return [{"id": i, "tool": r["tool"], "args": copy.deepcopy(r["args"])}
+                    for i, r in self._requests.items() if r["status"] == "pending"]
 
     def approve(self, request_id, approver):
         """Run the held call exactly as it was requested, once.
@@ -118,10 +119,11 @@ class Gate:
                 raise
             self.log.append(("ran", None, name, "read-only"))
             return {"status": "done", "output": out}
-        request_id = len(self._requests) + 1
-        # Deep copy: what the person approves is what was asked, even if the caller changes its dict afterwards.
-        self._requests[request_id] = {"tool": name, "args": copy.deepcopy(args), "status": "pending"}
-        self.log.append(("held", request_id, name, "waiting for a person"))
+        held = copy.deepcopy(args)  # what the person approves is what was asked, even if the caller changes its dict afterwards
+        with self._lock:  # ids come from the count of requests, so take it and insert in one step
+            request_id = len(self._requests) + 1
+            self._requests[request_id] = {"tool": name, "args": held, "status": "pending"}
+            self.log.append(("held", request_id, name, "waiting for a person"))
         return {"status": "pending", "request_id": request_id}
 
 

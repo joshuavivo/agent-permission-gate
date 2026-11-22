@@ -176,6 +176,21 @@ class Hardening(GateCase):
         self.assertEqual(len(self.gate.pending()), 1)
         self.assertEqual(self.files["notes.txt"], "hello")
 
+    def test_requests_made_at_once_get_distinct_ids(self):
+        start = threading.Barrier(8)
+        ids = []
+        def ask():
+            start.wait()
+            for _ in range(50):
+                ids.append(self.agent.call("write_file", {"path": "a", "text": "b"})["request_id"])
+        threads = [threading.Thread(target=ask) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(len(set(ids)), 400)
+        self.assertEqual(len(self.gate.pending()), 400)
+
     def test_two_people_approving_at_once_run_the_call_once(self):
         runs = []
         def slow_write(path, text):

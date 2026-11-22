@@ -131,7 +131,7 @@ provider-shaped fakes, so it needs no SDK or API key.
   raised inside a tool function itself still propagates to the caller.
 
 Standard library only, Python 3.10 or later. The gate is about 140 lines; the suite has
-35 tests, including the end-to-end example and the provider-adapter tests. `make test`
+36 tests, including the end-to-end example and the provider-adapter tests. `make test`
 runs them under `-W error::ResourceWarning`.
 
 ## Credits
