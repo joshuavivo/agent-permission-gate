@@ -32,6 +32,23 @@ class AdapterTest(unittest.TestCase):
         msg = {"tool_calls": [{"id": "c1", "function": {"name": "noop", "arguments": {"x": 1}}}]}
         self.assertEqual(tool_calls_from_openai(msg), [{"id": "c1", "name": "noop", "arguments": {"x": 1}}])
 
+    def test_a_read_that_raises_still_gets_an_answer(self):
+        # A read raising (say FileNotFoundError) after a write in the same message was held
+        # made dispatch raise: no results, and the held write's tool call went unanswered.
+        gate = Gate()
+        def read_file(path):
+            raise FileNotFoundError(path)
+        gate.register("read_file", read_file, writes=False)
+        gate.register("write_file", lambda path, text: None, writes=True)
+        msg = fake_openai_message([("write_file", '{"path": "a", "text": "b"}'), ("read_file", '{"path": "x"}')])
+        results, pending = dispatch(msg, gate.for_agent())
+        self.assertEqual([p["tool_call_id"] for p in pending], ["call_0"])
+        self.assertEqual([r["tool_call_id"] for r in results], ["call_1"])
+        out = json.loads(results[0]["content"])
+        self.assertEqual(out["status"], "error")
+        self.assertIn("FileNotFoundError", out["error"])
+        self.assertEqual(gate.log[-1][0], "failed")
+
     def test_a_read_whose_output_is_not_json_still_gets_an_answer(self):
         # A read returning a datetime made dispatch raise after the write in the same message
         # was already held, so neither list came back and the tool_call_ids went unanswered.

@@ -25,10 +25,10 @@ what really happened.
   Approve and deny take a lock, so two simultaneous clicks can't both run the call. A new
   request takes its id under the same lock (two requests made at once could share an id and
   one would overwrite the other), and `pending()` reads under it too.
-- **`dispatch` answers a call whose output isn't JSON.** A read tool returning a
+- **`dispatch` answers a call whose output isn't JSON, or whose read tool raised.** A read tool returning a
   `datetime` made `dispatch` raise after a write in the same message was already held,
-  so the caller got neither list. It now answers that call with an error and returns
-  both lists. Found by an outside review.
+  so the caller got neither list; a read tool that raised did the same. It now answers that
+  call with an error and returns both lists. Found by an outside review.
 - **The injection test checks that a person was asked.** It used to share its input with the
   denied-write test and checked only the log order; it now also checks that the person was asked
   about exactly the send the injected text produced.

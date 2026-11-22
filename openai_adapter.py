@@ -70,8 +70,9 @@ def dispatch(message, agent):
 
     Every tool call gets exactly one entry. A call the gate refuses (a tool not on
     the allow-list, arguments that are not an object), whose arguments are not
-    valid JSON, or whose output can't be sent back as JSON gets an error message in
-    `results`, and the other calls in the same message still run. Providers reject the next turn if any `tool_call_id` goes
+    valid JSON, whose read tool raised, or whose output can't be sent back as JSON
+    gets an error message in `results`, and the other calls in the same message
+    still run. Providers reject the next turn if any `tool_call_id` goes
     unanswered, and an exception here would leave writes already held in the gate
     with no one to answer them.
     """
@@ -87,6 +88,9 @@ def dispatch(message, agent):
             continue
         except Rejected as e:
             results.append(tool_result_message(call_id, {"status": "rejected", "error": str(e)}))
+            continue
+        except Exception as e:  # a read tool that raised; the gate has logged it as "failed"
+            results.append(tool_result_message(call_id, {"status": "error", "error": f"{type(e).__name__}: {e}"}))
             continue
         if outcome.get("status") == "pending":
             pending.append({
