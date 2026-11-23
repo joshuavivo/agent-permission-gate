@@ -5,7 +5,7 @@ This file starts on 2026-11-21; earlier changes are in the git history and the m
 
 ## [Unreleased]
 
-Fixes from an independent review. The theme: the audit log is the product, so it has to record
+Fixes from an AI review. The theme: the audit log is the product, so it has to record
 what really happened.
 
 ### Fixed
@@ -18,7 +18,7 @@ what really happened.
   Python can't inspect (builtins such as `dict`) skip the check and run as before.
 - **Refused approvals are logged.** Approving a used request, or an id that doesn't exist, is now
   in the log with who clicked, as the README always said.
-- **Hardening from an outside review.** A tool that raised `SystemExit` or a cancellation
+- **Hardening from an AI review.** A tool that raised `SystemExit` or a cancellation
   (any `BaseException`) left the log ending at "approved"; it is now logged "failed". A
   tool name that isn't text crashed with nothing logged; it is now refused and logged. An
   empty or missing approver (`None`) was accepted as who decided; it is now an error.
@@ -28,7 +28,7 @@ what really happened.
 - **`dispatch` answers a call whose output isn't JSON, or whose read tool raised.** A read tool returning a
   `datetime` made `dispatch` raise after a write in the same message was already held,
   so the caller got neither list; a read tool that raised did the same. It now answers that
-  call with an error and returns both lists. Found by an outside review.
+  call with an error and returns both lists. Found by an AI review.
 - **The injection test checks that a person was asked.** It used to share its input with the
   denied-write test and checked only the log order; it now also checks that the person was asked
   about exactly the send the injected text produced.
@@ -37,6 +37,6 @@ what really happened.
 - README's opening says what the log really holds (each call, who decided, whether it ran
   or failed) and that only tools labelled as writes are held; Limits adds that the log has
   no arguments, timestamps or outputs, and that arguments are checked by name, not type.
-  Found by an outside review.
+  Found by an AI review.
 - README opens with what an unguarded agent could do, and the "why injected instructions fail"
   section points to Limits for where the real process boundary belongs.
