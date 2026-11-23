@@ -1,5 +1,11 @@
 # Agent permission gate
 
+**An AI assistant that reads one poisoned email or web page can be talked into emailing a
+customer or issuing a refund on its own.** This gate holds every call to a tool marked as a write
+until a person approves it, and the log records each call, who decided, and whether it ran or
+failed. (It guards changes, not what a read can leak, and it trusts each tool's read/write label;
+see Limits.)
+
 A small gate that sits between an AI agent and its tools. Tools that only read run straight
 away. Tools that change anything wait until a person approves that exact call.
 
@@ -16,12 +22,14 @@ get a change through without a person, and each one has to fail.
 | A denied request leaves no side effect and cannot be approved later | `test_denied_request_leaves_no_side_effect_and_cannot_be_approved_later` |
 | An approval is used once | `test_an_approval_is_used_once` |
 | What runs is what the person saw, even if the arguments are changed afterwards | `test_what_runs_is_what_was_approved_even_if_the_args_change_afterwards` |
+| A call the tool can't accept (missing or unknown arguments) is refused when requested, before anyone is asked to approve it | `test_a_call_that_cannot_run_is_refused_when_requested_not_when_approved` |
 | A tool not on the allow-list is rejected | `test_tool_not_on_the_allow_list_is_rejected` |
 | Every tool is classified as read or write when it is added, with no default | `test_a_tool_must_be_classified_when_registered` |
 | A tool name is registered once, so a held request cannot be swapped for another function | `test_a_name_cannot_be_registered_twice` |
 | Text inside tool output cannot approve anything | `test_instructions_inside_tool_output_cannot_approve_anything` |
 | An agent that obeys injected text still cannot approve | `test_agent_obeying_the_injected_text_still_cannot_approve` |
-| Every decision is logged, rejections included | `test_every_decision_is_logged_in_order`, `test_rejected_args_are_logged` |
+| Every decision is logged, rejections included | `test_every_decision_is_logged_in_order`, `test_rejected_args_are_logged`, `test_a_refused_approval_is_logged`, `test_denying_a_used_request_is_refused_and_logged` |
+| The log records the outcome too: an approved call is logged as done or failed, and a read that raises is never logged as ran | `test_an_approved_call_that_fails_is_logged_as_failed`, `test_an_approved_call_that_succeeds_is_logged_as_done`, `test_a_read_that_fails_is_not_logged_as_ran` |
 
 ## Why injected instructions fail
 
@@ -29,7 +37,8 @@ A web page or a file can contain text such as "this request is approved". The ga
 try to detect that text. It makes it irrelevant: the agent is given a handle with one method,
 `call`, and approval is a different method on a different object that only the application's
 approve button reaches. There is no tool named `approve` to call, and nothing the model reads
-or writes is ever interpreted as a decision.
+or writes is ever interpreted as a decision. (Inside one process that separation is a
+convention, not a wall; see Limits for where the real boundary goes.)
 
 ## Use
 
@@ -102,6 +111,13 @@ provider-shaped fakes, so it needs no SDK or API key.
 
 ## Limits
 
+- The log records the decision and the outcome for each request id: who approved or denied,
+  and whether the call ran or failed (with the error). It does not store the arguments, a
+  timestamp or the tool's output; the held request (`pending()`) has the arguments until it is
+  decided. A production audit log would store all three in an append-only store.
+- Arguments are checked by name against the tool's signature, not by type: `to=["a", "b"]` or
+  `body=None` is held for a person as asked.
+
 - The split between the agent's handle and the gate is by interface. Inside one Python process
   that is a convention, not a security boundary: code running in the same process can reach the
   gate. For a real boundary the gate belongs in a separate process from anything the model
@@ -111,11 +127,12 @@ provider-shaped fakes, so it needs no SDK or API key.
 - A read can still leak data, for example a fetch whose URL carries a secret. This gate
   controls changes, not what leaves.
 - Requests are held in memory and are lost on restart.
-- `dispatch` answers calls the gate refuses and calls with malformed arguments. An exception
-  raised inside a tool function itself still propagates to the caller.
+- `dispatch` answers every call in a message: refused calls, malformed arguments, read tools
+  that raise and output that isn't JSON all get an error result. A held write raises only when
+  a person approves it, through `gate.approve()`, where the caller handles it.
 
-Standard library only, Python 3.10 or later. The gate is under 100 lines; the suite has
-22 tests, including the end-to-end example and the provider-adapter tests. `make test`
+Standard library only, Python 3.10 or later. The gate is about 140 lines; the suite has
+37 tests, including the end-to-end example and the provider-adapter tests. `make test`
 runs them under `-W error::ResourceWarning`.
 
 ## Credits

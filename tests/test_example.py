@@ -23,10 +23,13 @@ class ExampleAgentTest(unittest.TestCase):
         self.assertIn("send_email: HELD, waiting for a person", result["transcript"])
         self.assertEqual(result["sent"], [], "a denied write sends nothing")
 
-    def test_injected_approval_in_the_brief_cannot_send(self):
-        # The model obeys the brief's "already approved" line and requests the send,
-        # but the approver refuses: the gate held it, and nothing was sent.
-        result = run(approver=lambda req: False)
+    def test_injected_approval_in_the_brief_still_goes_to_a_person(self):
+        # The brief says the send is "already approved". If that text could approve anything,
+        # the send would go out without the person being asked. Instead the person is asked
+        # about exactly the call the injected text produced, and their "no" is final.
+        asked = []
+        result = run(approver=lambda req: asked.append(req) or False)
+        self.assertEqual([r["tool"] for r in asked], ["send_email"])
         self.assertEqual([e[0] for e in result["log"]], ["ran", "held", "denied"])
         self.assertEqual(result["sent"], [])
 

@@ -6,7 +6,9 @@ nothing else, so no text the model produces or reads can approve anything: appro
 is a separate method the agent's handle does not have.
 """
 import copy
+import inspect
 import json
+import threading
 
 
 class Rejected(Exception):
@@ -20,6 +22,7 @@ class Gate:
         self._tools = {}      # name -> (function, writes)
         self._requests = {}   # id -> {"tool", "args", "status"}
         self.log = []         # every decision, in order
+        self._lock = threading.Lock()  # approve/deny: check-and-set of a request's status is atomic
 
     def register(self, name, fn, writes):
         """writes has no default on purpose: every tool must be classified when it is added.
@@ -37,31 +40,55 @@ class Gate:
         return AgentHandle(self)
 
     def pending(self):
-        return [{"id": i, "tool": r["tool"], "args": copy.deepcopy(r["args"])}
-                for i, r in self._requests.items() if r["status"] == "pending"]
+        with self._lock:  # a request added mid-iteration would otherwise break the loop
+            return [{"id": i, "tool": r["tool"], "args": copy.deepcopy(r["args"])}
+                    for i, r in self._requests.items() if r["status"] == "pending"]
 
     def approve(self, request_id, approver):
-        """Run the held call exactly as it was requested, once."""
-        r = self._take(request_id)
-        r["status"] = "approved"
-        self.log.append(("approved", request_id, r["tool"], approver))
+        """Run the held call exactly as it was requested, once.
+
+        The log gets the decision ("approved") and then the outcome ("done" or "failed"), so it
+        never shows an approved call as if it ran when the tool raised. Either way the approval
+        is used up: a retry is a new request, approved again.
+        """
+        with self._lock:  # two clicks at once: exactly one wins
+            r = self._take(request_id, approver)
+            r["status"] = "approved"
+            self.log.append(("approved", request_id, r["tool"], approver))
         fn, _ = self._tools[r["tool"]]
-        return fn(**copy.deepcopy(r["args"]))
+        try:
+            out = fn(**copy.deepcopy(r["args"]))
+        except BaseException as e:  # SystemExit and cancellation included: the record must not stop at "approved"
+            r["status"] = "failed"
+            self.log.append(("failed", request_id, r["tool"], f"{type(e).__name__}: {e}"))
+            raise
+        r["status"] = "done"
+        self.log.append(("done", request_id, r["tool"], approver))
+        return out
 
     def deny(self, request_id, approver):
-        r = self._take(request_id)
-        r["status"] = "denied"
-        self.log.append(("denied", request_id, r["tool"], approver))
+        with self._lock:
+            r = self._take(request_id, approver)
+            r["status"] = "denied"
+            self.log.append(("denied", request_id, r["tool"], approver))
 
-    def _take(self, request_id):
+    def _take(self, request_id, approver):
+        """A refused approve/deny is logged too: a second click is part of the record."""
+        if not isinstance(approver, str) or not approver.strip():
+            raise ValueError("approver must name the person who decided")
         r = self._requests.get(request_id)
         if r is None:
+            self.log.append(("rejected", request_id, None, f"{approver}: no such request"))
             raise Rejected(f"no request {request_id}")
         if r["status"] != "pending":
+            self.log.append(("rejected", request_id, r["tool"], f"{approver}: already {r['status']}"))
             raise Rejected(f"request {request_id} was already {r['status']}")  # an approval is used once
         return r
 
     def _call(self, name, args):
+        if not isinstance(name, str):
+            self.log.append(("rejected", None, repr(name), "tool name must be text"))
+            raise Rejected("tool name must be text")
         if name not in self._tools:
             self.log.append(("rejected", None, name, "not on the allow-list"))
             raise Rejected(f"tool {name!r} is not on the allow-list")
@@ -74,13 +101,29 @@ class Gate:
             self.log.append(("rejected", None, name, "args must be plain data"))
             raise Rejected("args must be plain data") from None
         fn, writes = self._tools[name]
+        try:  # a call the tool can't accept is refused now, not after a person approves it
+            sig = inspect.signature(fn)
+        except Exception:  # builtins like dict have none; a custom __signature__ can raise anything
+            sig = None     # no signature to check, so the call itself will tell
+        if sig is not None:
+            try:
+                sig.bind(**args)
+            except TypeError as e:
+                self.log.append(("rejected", None, name, f"args don't match the tool: {e}"))
+                raise Rejected(f"args don't match {name!r}: {e}") from None
         if not writes:
+            try:
+                out = fn(**args)
+            except BaseException as e:  # logged as what it was, then the caller sees the error
+                self.log.append(("failed", None, name, f"{type(e).__name__}: {e}"))
+                raise
             self.log.append(("ran", None, name, "read-only"))
-            return {"status": "done", "output": fn(**args)}
-        request_id = len(self._requests) + 1
-        # Deep copy: what the person approves is what was asked, even if the caller changes its dict afterwards.
-        self._requests[request_id] = {"tool": name, "args": copy.deepcopy(args), "status": "pending"}
-        self.log.append(("held", request_id, name, "waiting for a person"))
+            return {"status": "done", "output": out}
+        held = copy.deepcopy(args)  # what the person approves is what was asked, even if the caller changes its dict afterwards
+        with self._lock:  # ids come from the count of requests, so take it and insert in one step
+            request_id = len(self._requests) + 1
+            self._requests[request_id] = {"tool": name, "args": held, "status": "pending"}
+            self.log.append(("held", request_id, name, "waiting for a person"))
         return {"status": "pending", "request_id": request_id}
 
 

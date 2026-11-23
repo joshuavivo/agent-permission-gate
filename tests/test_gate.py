@@ -1,4 +1,5 @@
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -105,6 +106,113 @@ class Injection(GateCase):
         self.assertEqual(len(self.gate.pending()), 1)
 
 
+class Arguments(GateCase):
+    def test_a_call_that_cannot_run_is_refused_when_requested_not_when_approved(self):
+        # Missing or unknown arguments used to be held, approved by a person, and only then
+        # fail inside the tool. Now the call is checked against the tool's signature up front.
+        for bad in ({"path": "notes.txt"}, {"path": "notes.txt", "text": "x", "mode": "w"}):
+            with self.assertRaises(Rejected):
+                self.agent.call("write_file", bad)
+        with self.assertRaises(Rejected):
+            self.agent.call("read_file", {})
+        self.assertEqual(self.gate.pending(), [])
+        self.assertEqual([e[0] for e in self.gate.log], ["rejected"] * 3)
+        self.assertTrue(all("don't match" in e[3] for e in self.gate.log))
+
+
+class Outcomes(GateCase):
+    """The log records what happened, not only what was decided."""
+
+    def setUp(self):
+        super().setUp()
+        def send(to):
+            raise ConnectionError("mail server down")
+        def broken_read(path):
+            raise KeyError(path)
+        self.gate.register("send", send, writes=True)
+        self.gate.register("broken_read", broken_read, writes=False)
+
+    def test_an_approved_call_that_fails_is_logged_as_failed(self):
+        r = self.agent.call("send", {"to": "pat@example.com"})
+        with self.assertRaises(ConnectionError):
+            self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "failed"])
+        self.assertIn("mail server down", self.gate.log[-1][3])
+        self.assertEqual(self.gate.pending(), [])  # used once; a retry is a new request
+
+    def test_an_approved_call_that_succeeds_is_logged_as_done(self):
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "done"])
+
+    def test_a_read_that_fails_is_not_logged_as_ran(self):
+        with self.assertRaises(KeyError):
+            self.agent.call("broken_read", {"path": "missing.txt"})
+        self.assertEqual([e[0] for e in self.gate.log], ["failed"])
+
+
+class Hardening(GateCase):
+    def test_a_tool_that_exits_is_still_logged_as_failed(self):
+        # BaseException (SystemExit, KeyboardInterrupt, asyncio.CancelledError) used to skip the
+        # failure record, leaving the log ending at "approved".
+        def quit_now(to):
+            raise SystemExit(1)
+        self.gate.register("quit", quit_now, writes=True)
+        r = self.agent.call("quit", {"to": "x"})
+        with self.assertRaises(SystemExit):
+            self.gate.approve(r["request_id"], approver="pat")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "failed"])
+
+    def test_a_tool_name_that_is_not_text_is_refused_and_logged(self):
+        with self.assertRaises(Rejected):
+            self.agent.call(["write_file"], {})
+        self.assertEqual(self.gate.log[-1][0], "rejected")
+
+    def test_the_approver_must_say_who_decided(self):
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        for nobody in (None, "", "   "):
+            with self.assertRaises(ValueError):
+                self.gate.approve(r["request_id"], approver=nobody)
+        self.assertEqual(len(self.gate.pending()), 1)
+        self.assertEqual(self.files["notes.txt"], "hello")
+
+    def test_requests_made_at_once_get_distinct_ids(self):
+        start = threading.Barrier(8)
+        ids = []
+        def ask():
+            start.wait()
+            for _ in range(50):
+                ids.append(self.agent.call("write_file", {"path": "a", "text": "b"})["request_id"])
+        threads = [threading.Thread(target=ask) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(len(set(ids)), 400)
+        self.assertEqual(len(self.gate.pending()), 400)
+
+    def test_two_people_approving_at_once_run_the_call_once(self):
+        runs = []
+        def slow_write(path, text):
+            runs.append(path)
+            return "written"
+        self.gate.register("slow_write", slow_write, writes=True)
+        r = self.agent.call("slow_write", {"path": "a", "text": "b"})
+        start = threading.Barrier(8)
+        def click():
+            start.wait()
+            try:
+                self.gate.approve(r["request_id"], approver="pat")
+            except Rejected:
+                pass
+        threads = [threading.Thread(target=click) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(runs, ["a"])
+
+
 class Audit(GateCase):
     def test_every_decision_is_logged_in_order(self):
         self.agent.call("read_file", {"path": "notes.txt"})
@@ -112,6 +220,25 @@ class Audit(GateCase):
         self.gate.deny(r["request_id"], approver="pat")
         self.assertEqual([e[0] for e in self.gate.log], ["ran", "held", "denied"])
         self.assertEqual(self.gate.log[-1][3], "pat")
+
+    def test_a_refused_approval_is_logged(self):
+        # Approving a request twice, or one that doesn't exist, is refused, and the refusal is
+        # part of the record: a second "approve" click is exactly what an audit needs to see.
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        self.gate.approve(r["request_id"], approver="pat")
+        for request_id in (r["request_id"], 99):
+            with self.assertRaises(Rejected):
+                self.gate.approve(request_id, approver="sam")
+        self.assertEqual([e[0] for e in self.gate.log], ["held", "approved", "done", "rejected", "rejected"])
+        self.assertEqual(self.gate.log[3][1:3], (r["request_id"], "write_file"))
+        self.assertIn("sam", self.gate.log[3][3])
+
+    def test_denying_a_used_request_is_refused_and_logged(self):
+        r = self.agent.call("write_file", {"path": "notes.txt", "text": "x"})
+        self.gate.deny(r["request_id"], approver="pat")
+        with self.assertRaises(Rejected):
+            self.gate.deny(r["request_id"], approver="sam")
+        self.assertEqual(self.gate.log[-1], ("rejected", r["request_id"], "write_file", "sam: already denied"))
 
     def test_rejected_args_are_logged(self):
         for bad in ("not an object", {"path": "a", "text": object()}):
@@ -121,6 +248,26 @@ class Audit(GateCase):
             ("rejected", None, "write_file", "args must be an object"),
             ("rejected", None, "write_file", "args must be plain data"),
         ])
+
+
+class ToolsWithoutASignature(GateCase):
+    def test_a_tool_python_cannot_inspect_still_runs(self):
+        # Some callables (builtins like dict) have no signature to check. The argument check
+        # is skipped for them rather than refusing the call or crashing the gate.
+        self.gate.register("make_record", dict, writes=False)
+        r = self.agent.call("make_record", {"a": 1})
+        self.assertEqual(r, {"status": "done", "output": {"a": 1}})
+        self.assertEqual([e[0] for e in self.gate.log], ["ran"])
+
+    def test_a_tool_whose_signature_lookup_raises_still_runs(self):
+        class Odd:
+            @property
+            def __signature__(self):
+                raise RuntimeError("no signature here")
+            def __call__(self, **kw):
+                return kw
+        self.gate.register("odd", Odd(), writes=False)
+        self.assertEqual(self.agent.call("odd", {"a": 1}), {"status": "done", "output": {"a": 1}})
 
 
 if __name__ == "__main__":
